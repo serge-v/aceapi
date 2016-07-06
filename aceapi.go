@@ -11,7 +11,16 @@ import (
 	"os"
 	"io"
 	"crypto/md5"
+	"flag"
 )
+
+type config struct {
+	token string
+}
+
+var conf config
+var version string
+var showVersion = flag.Bool("v", false, "show version")
 
 func execCmd(cmdline string) string {
 
@@ -52,7 +61,7 @@ func dumpReq(req *http.Request, w io.Writer) {
 func processFsRequest(r *http.Request, rw http.ResponseWriter) {
 	dir, _ := os.Getwd()
 	fmt.Fprintf(rw, "cwd: %s\n", dir)
-	fmt.Fprintf(rw, "env: %s", os.Environ())
+	fmt.Fprintf(rw, "env: %s\n", os.Environ())
 }
 
 type handler struct {
@@ -66,7 +75,7 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	token := r.Header.Get("Token")
-	if len(token) == 0 || token != "8eh4ufb3j592g" {
+	if len(token) == 0 || token != conf.token {
 		http.Error(rw, "error: invalid token", http.StatusForbidden)
 		return
 	}
@@ -74,8 +83,10 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	path := strings.Replace(r.URL.Path, "/v1", "", 1)
 
 	if path == "" || path == "/" {
-		fmt.Fprintf(rw, "req  -- dump request\n")
-		fmt.Fprintf(rw, "cron -- crontab\n")
+		fmt.Fprintf(rw, "req      -- dump request\n")
+		fmt.Fprintf(rw, "cron     -- crontab\n")
+		fmt.Fprintf(rw, "ht       -- dump ../.htaccess\n")
+		fmt.Fprintf(rw, "v        -- show version\n")
 		return
 	}
 
@@ -86,6 +97,21 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if path == "/req" {
 		dumpReq(r, rw)
+		return
+	}
+
+	if path == "/v" {
+		fmt.Fprintln(rw, version)		
+		return
+	}
+
+	if path == "/ht" {
+		f, err := os.Open("../.htaccess")
+		if err != nil {
+			http.Error(rw, "error: cannot read .htaccess", http.StatusNotFound)
+			return
+		}
+		io.Copy(rw, f)
 		return
 	}
 	
@@ -105,11 +131,11 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		buf, _ := ioutil.ReadAll(r.Body)
-		if err := ioutil.WriteFile("aceapi-v1", buf, 0755); err != nil {
-			http.Error(rw, "error: " + err.Error(), http.StatusInternalServerError)
+		if err := ioutil.WriteFile("aceapi-v1", buf, 0744); err != nil {
+			http.Error(rw, "error: " + err.Error(), http.StatusOK)
 			return
 		}
-		
+
 		fmt.Fprintf(rw, "aceapi-v1: %x\n", md5.Sum(buf))
 		return
 	}
@@ -117,7 +143,22 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	dumpReq(r, rw)
 }
 
+func init_config() {
+	buf, err := ioutil.ReadFile("token.txt")
+	if err != nil {
+		panic("cannot read token")
+	}
+	conf.token = strings.Trim(string(buf), "\r\n ")
+}
+
 func main() {
+	flag.Parse()
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
+
+	init_config()
 	err := cgi.Serve(handler{})
 	if err != nil {
 		panic(err)

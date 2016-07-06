@@ -1,0 +1,4 @@
+curl \
+	-H "Token: `cat token.txt`" \
+	-k \
+	--url https://localhost:9001/v1/$1

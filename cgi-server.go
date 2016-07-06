@@ -11,7 +11,7 @@ func main() {
 	fmt.Println("starting server on http://localhost:9001")
 	
 	api := cgi.Handler{}
-	api.Path = "aceapi-v1"
+	api.Path = "aceapi"
 
 	updater := cgi.Handler{}
 	updater.Path = "updater"

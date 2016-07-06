@@ -1,0 +1,4 @@
+curl \
+	-H "Token: `cat token.txt`" \
+	--cacert acenet.crt \
+	--url https://api.voilokov.com/v1/$1
