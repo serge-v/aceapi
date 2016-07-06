@@ -18,9 +18,12 @@ type config struct {
 	token string
 }
 
-var conf config
-var version string
-var showVersion = flag.Bool("v", false, "show version")
+var (
+	conf config
+	version string
+	date string
+	showVersion = flag.Bool("v", false, "show version")
+)
 
 func execCmd(cmdline string) string {
 
@@ -101,7 +104,8 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	if path == "/v" {
-		fmt.Fprintln(rw, version)		
+		fmt.Fprintln(rw, "version:", version)
+		fmt.Fprintln(rw, "date:   ", date)
 		return
 	}
 
@@ -154,7 +158,8 @@ func init_config() {
 func main() {
 	flag.Parse()
 	if *showVersion {
-		fmt.Println(version)
+		fmt.Println("version:", version)
+		fmt.Println("date:   ", date)
 		return
 	}
 
