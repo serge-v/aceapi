@@ -4,15 +4,15 @@ LDFLAGS="-X main.date=$(DATE) -X main.version=$(VERSION)"
 
 all: aceapi cgi-server updater
 
-debug: aceapi.go aceapidbg.go
-	go build -o aceapi.debug -ldflags $(LDFLAGS) aceapi.go aceapidbg.go
+debug: aceapi.go
+	go build -o aceapi.debug -ldflags $(LDFLAGS) aceapi.go
 	cgdb -d /opt/local/bin/ggdb --args ./aceapi.debug -t
 
 test: *.go
 	go test -test.v aceapi.go aceapi_test.go
 
-aceapi: aceapi.go aceapidbg.go Makefile
-	go build -ldflags $(LDFLAGS) aceapi.go aceapidbg.go
+aceapi: aceapi.go Makefile
+	go build -ldflags $(LDFLAGS) aceapi.go
 
 updater: aceapi
 	cp aceapi updater
