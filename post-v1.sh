@@ -1,3 +1,5 @@
+./aceapi -v
+read -p deploy?
 curl \
 	-H "Content-Type: application/octet-stream" \
 	--cacert acenet.crt \

@@ -72,10 +72,10 @@ type handler struct {
 
 func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
-	if r.URL.Scheme != "https" {
-		http.Error(rw, "error: http forbidden", http.StatusForbidden)
-		return
-	}
+//	if r.URL.Scheme != "https" {
+//		http.Error(rw, "error: " + r.URL.Scheme + " forbidden", http.StatusForbidden)
+//		return
+//	}
 
 	token := r.Header.Get("Token")
 	if len(token) == 0 || token != conf.token {
@@ -109,6 +109,21 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if path == "/x" {
+		if r.Method != "POST" {
+			http.Error(rw, "error: need binary body", http.StatusMethodNotAllowed)
+			return
+		}
+		buf, _ := ioutil.ReadAll(r.Body)
+		fmt.Fprintln(rw, execCmd(string(buf)))
+		return
+	}
+
+	if path == "/df" {
+		fmt.Fprintln(rw, execCmd("df -h --local ${DOCUMENT_ROOT} 2>/dev/null"))
+		return
+	}
+
 	if path == "/ht" {
 		f, err := os.Open("../.htaccess")
 		if err != nil {
@@ -118,7 +133,7 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		io.Copy(rw, f)
 		return
 	}
-	
+
 	if path == "/cron" {
 		if r.Method == "POST" {
 			buf, _ := ioutil.ReadAll(r.Body)
@@ -131,7 +146,7 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if path == "/updater/" {
 		if r.Method != "POST" {
-			http.Error(rw, "error: need binary body", http.StatusMethodNotAllowed)
+			http.Error(rw, "error: post method required", http.StatusMethodNotAllowed)
 			return
 		}
 		buf, _ := ioutil.ReadAll(r.Body)
@@ -141,6 +156,34 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		fmt.Fprintf(rw, "aceapi-v1: %x\n", md5.Sum(buf))
+		return
+	}
+
+	if path == "/upload" {
+		if r.Method != "POST" {
+			http.Error(rw, "error: post method required", http.StatusMethodNotAllowed)
+			return
+		}
+		
+		dst := r.URL.Query().Get("dst")
+		if dst == "" {
+			http.Error(rw, "error: no dst=fname parameter", http.StatusBadRequest)
+			return
+		}
+
+		f, err := os.Create(dst)
+		if err != nil {
+			http.Error(rw, "error: " + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		written, err := io.Copy(f, r.Body)
+		if err != nil {
+			http.Error(rw, "error: " + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		fmt.Fprintf(rw, "written: %d\n", written)
 		return
 	}
 
@@ -162,7 +205,7 @@ func main() {
 		fmt.Println("date:   ", date)
 		return
 	}
-
+	
 	init_config()
 	err := cgi.Serve(handler{})
 	if err != nil {

@@ -1,0 +1,8 @@
+[[ $1 == "" ]] && exit 1;
+
+curl \
+	-H "Token: `cat token.txt`" \
+	-X POST \
+	--cacert acenet.crt \
+	--url https://api.voilokov.com/v1/x \
+	--data "$*"
