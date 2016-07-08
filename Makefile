@@ -33,5 +33,8 @@ deploy-debug: aceapi
 	curl --data-binary @aceapi -H "Token: `cat token.txt`" -k https://localhost:9001/updater/
 	md5 aceapi
 
+godoc:
+	/usr/local/go/bin/godoc -http=:6060 &
+
 clean:
 	rm -f aceapi.linux aceapi updater cgi-server

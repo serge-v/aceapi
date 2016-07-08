@@ -77,13 +77,20 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 //		return
 //	}
 
+	path := strings.Replace(r.URL.Path, "/v1", "", 1)
+
+	if path == "/a" {
+//		username, password, ok := r.BasicAuth()
+		rw.Header().Add("WWW-Authenticate", `Basic realm="myrealm"`)
+		http.Error(rw, "error: no auth", http.StatusUnauthorized)
+		return
+	}
+
 	token := r.Header.Get("Token")
 	if len(token) == 0 || token != conf.token {
 		http.Error(rw, "error: invalid token", http.StatusForbidden)
 		return
 	}
-
-	path := strings.Replace(r.URL.Path, "/v1", "", 1)
 
 	if path == "" || path == "/" {
 		fmt.Fprintf(rw, "req      -- dump request\n")
