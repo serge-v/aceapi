@@ -1,15 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/cgi"
-	"fmt"
 )
 
 func main() {
 
 	fmt.Println("starting server on http://localhost:9001")
-	
+
 	api := cgi.Handler{}
 	api.Path = "aceapi"
 

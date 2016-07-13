@@ -1,17 +1,17 @@
 package main
 
 import (
+	"crypto/md5"
+	"flag"
+	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/cgi"
 	"net/http/httputil"
-	"fmt"
+	"os"
 	"os/exec"
 	"strings"
-	"io/ioutil"
-	"os"
-	"io"
-	"crypto/md5"
-	"flag"
 )
 
 type config struct {
@@ -19,23 +19,23 @@ type config struct {
 }
 
 var (
-	conf config
-	version string
-	date string
+	conf        config
+	version     string
+	date        string
 	showVersion = flag.Bool("v", false, "show version")
 )
 
 func execCmd(cmdline string) string {
 
-        var out []byte
-        var err error
+	var out []byte
+	var err error
 
-        if out, err = exec.Command("bash", "-c", cmdline).CombinedOutput(); err != nil {
-                s := fmt.Sprintf("%s: %s. %s", cmdline, string(out), err)
-                return s
-        }
+	if out, err = exec.Command("bash", "-c", cmdline).CombinedOutput(); err != nil {
+		s := fmt.Sprintf("%s: %s. %s", cmdline, string(out), err)
+		return s
+	}
 
-        return string(out)
+	return string(out)
 }
 
 func printCrontab(w io.Writer) {
@@ -55,7 +55,8 @@ func dumpReq(req *http.Request, w io.Writer) {
 	username, password, _ := req.BasicAuth()
 	fmt.Fprintln(w, "user:password", username, password)
 
-	buf, err := httputil.DumpRequest(req, true); if err != nil {
+	buf, err := httputil.DumpRequest(req, true)
+	if err != nil {
 		panic(err)
 	}
 	fmt.Fprintln(w, string(buf))
@@ -72,15 +73,15 @@ type handler struct {
 
 func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
-//	if r.URL.Scheme != "https" {
-//		http.Error(rw, "error: " + r.URL.Scheme + " forbidden", http.StatusForbidden)
-//		return
-//	}
+	//	if r.URL.Scheme != "https" {
+	//		http.Error(rw, "error: " + r.URL.Scheme + " forbidden", http.StatusForbidden)
+	//		return
+	//	}
 
 	path := strings.Replace(r.URL.Path, "/v1", "", 1)
 
 	if path == "/a" {
-//		username, password, ok := r.BasicAuth()
+		//		username, password, ok := r.BasicAuth()
 		rw.Header().Add("WWW-Authenticate", `Basic realm="myrealm"`)
 		http.Error(rw, "error: no auth", http.StatusUnauthorized)
 		return
@@ -158,7 +159,7 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		buf, _ := ioutil.ReadAll(r.Body)
 		if err := ioutil.WriteFile("aceapi-v1", buf, 0744); err != nil {
-			http.Error(rw, "error: " + err.Error(), http.StatusOK)
+			http.Error(rw, "error: "+err.Error(), http.StatusOK)
 			return
 		}
 
@@ -171,7 +172,7 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			http.Error(rw, "error: post method required", http.StatusMethodNotAllowed)
 			return
 		}
-		
+
 		dst := r.URL.Query().Get("dst")
 		if dst == "" {
 			http.Error(rw, "error: no dst=fname parameter", http.StatusBadRequest)
@@ -180,13 +181,13 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		f, err := os.Create(dst)
 		if err != nil {
-			http.Error(rw, "error: " + err.Error(), http.StatusInternalServerError)
+			http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		written, err := io.Copy(f, r.Body)
 		if err != nil {
-			http.Error(rw, "error: " + err.Error(), http.StatusInternalServerError)
+			http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -212,7 +213,7 @@ func main() {
 		fmt.Println("date:   ", date)
 		return
 	}
-	
+
 	init_config()
 	err := cgi.Serve(handler{})
 	if err != nil {
