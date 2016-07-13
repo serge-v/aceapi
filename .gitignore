@@ -1,3 +1,7 @@
 server.key
 server.pem
 token.txt
+aceapi
+aceapi.linux
+updater
+cgi-server
