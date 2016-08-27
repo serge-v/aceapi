@@ -16,6 +16,8 @@ import (
 
 type config struct {
 	token string
+	tokenFile string
+	cacheDir string
 }
 
 var (
@@ -44,8 +46,8 @@ func printCrontab(w io.Writer) {
 }
 
 func addCrontab(buf []byte, w io.Writer) {
-	ioutil.WriteFile("/tmp/crontab.txt", buf, 0600)
-	s := execCmd("crontab /tmp/crontab.txt")
+	ioutil.WriteFile(conf.cacheDir + "/crontab.txt", buf, 0600)
+	s := execCmd("crontab " + conf.cacheDir + "/crontab.txt")
 	fmt.Fprintln(w, s)
 	printCrontab(w)
 }
@@ -198,10 +200,18 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	dumpReq(r, rw)
 }
 
-func init_config() {
-	buf, err := ioutil.ReadFile("token.txt")
+func initConfig() {
+	conf.cacheDir = os.Getenv("HOME") + "/.cache/aceapi"
+	if _, err := os.Stat(conf.cacheDir); os.IsNotExist(err) {
+		if err := os.Mkdir(conf.cacheDir, 0700); err != nil {
+			panic(err)
+		}
+	}
+
+	conf.tokenFile = os.Getenv("HOME") + "/.config/aceapi/token.txt"
+	buf, err := ioutil.ReadFile(conf.tokenFile)
 	if err != nil {
-		panic("cannot read token")
+		panic("cannot read token from " + conf.tokenFile)
 	}
 	conf.token = strings.Trim(string(buf), "\r\n ")
 }
@@ -214,7 +224,7 @@ func main() {
 		return
 	}
 
-	init_config()
+	initConfig()
 	err := cgi.Serve(handler{})
 	if err != nil {
 		panic(err)
