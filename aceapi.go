@@ -1,7 +1,8 @@
 package main
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -11,17 +12,18 @@ import (
 	"net/http/httputil"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
-type config struct {
-	token string
-	tokenFile string
-	cacheDir string
+type Config struct {
+	Token     string
+	TokenFile string
+	CacheDir  string
 }
 
 var (
-	conf        config
+	conf        Config
 	version     string
 	date        string
 	showVersion = flag.Bool("v", false, "show version")
@@ -46,8 +48,8 @@ func printCrontab(w io.Writer) {
 }
 
 func addCrontab(buf []byte, w io.Writer) {
-	ioutil.WriteFile(conf.cacheDir + "/crontab.txt", buf, 0600)
-	s := execCmd("crontab " + conf.cacheDir + "/crontab.txt")
+	ioutil.WriteFile(conf.CacheDir+"/crontab.txt", buf, 0600)
+	s := execCmd("crontab " + conf.CacheDir + "/crontab.txt")
 	fmt.Fprintln(w, s)
 	printCrontab(w)
 }
@@ -64,10 +66,17 @@ func dumpReq(req *http.Request, w io.Writer) {
 	fmt.Fprintln(w, string(buf))
 }
 
-func processFsRequest(r *http.Request, rw http.ResponseWriter) {
-	dir, _ := os.Getwd()
-	fmt.Fprintf(rw, "cwd: %s\n", dir)
-	fmt.Fprintf(rw, "env: %s\n", os.Environ())
+func Sha256sum(fileName string) (string, error) {
+	f, err := os.Open(fileName)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	sha := sha256.New()
+	io.Copy(sha, f)
+	sum := sha.Sum(nil)
+	return hex.EncodeToString(sum), nil
 }
 
 type handler struct {
@@ -90,21 +99,26 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	token := r.Header.Get("Token")
-	if len(token) == 0 || token != conf.token {
+	if len(token) == 0 || token != conf.Token {
 		http.Error(rw, "error: invalid token", http.StatusForbidden)
 		return
 	}
 
 	if path == "" || path == "/" {
-		fmt.Fprintf(rw, "req      -- dump request\n")
-		fmt.Fprintf(rw, "cron     -- crontab\n")
-		fmt.Fprintf(rw, "ht       -- dump ../.htaccess\n")
-		fmt.Fprintf(rw, "v        -- show version\n")
-		return
-	}
-
-	if strings.HasPrefix(path, "/fs") {
-		processFsRequest(r, rw)
+		help := `
+		Requests:
+			GET req                               -- dump request
+			POST cron                             -- set crontab
+			GET cron                              -- get crontab
+			GET ht                                -- dump ../.htaccess
+			GET v                                 -- show version
+			POST file?dst={path}&mode={mode}      -- upload file
+			HEAD file?dst={path}                  -- get file attributes
+			POST x                                -- execute command
+		Headers:
+			Token -- authorization token
+		`
+		fmt.Fprintf(rw, help)
 		return
 	}
 
@@ -116,6 +130,9 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if path == "/v" {
 		fmt.Fprintln(rw, "version:", version)
 		fmt.Fprintln(rw, "date:   ", date)
+		dir, _ := os.Getwd()
+		fmt.Fprintf(rw, "cwd: %s\n", dir)
+		fmt.Fprintf(rw, "env: %s\n", os.Environ())
 		return
 	}
 
@@ -165,11 +182,11 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fmt.Fprintf(rw, "aceapi-v1: %x\n", md5.Sum(buf))
+		fmt.Fprintf(rw, "aceapi-v1: %x\n", sha256.Sum256(buf))
 		return
 	}
 
-	if path == "/upload" {
+	if path == "/file" {
 		if r.Method != "POST" {
 			http.Error(rw, "error: post method required", http.StatusMethodNotAllowed)
 			return
@@ -181,11 +198,28 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		str := r.URL.Query().Get("mode")
+		var mode os.FileMode = 0
+
+		if len(str) > 0 {
+			n, err := strconv.ParseInt(str, 8, 32)
+			if err != nil {
+				http.Error(rw, "error: cannot parse mode parameter", http.StatusBadRequest)
+				return
+			}
+			if n < 0 || n > 0777 {
+				http.Error(rw, "error: invalid file mode", http.StatusBadRequest)
+				return
+			}
+			mode = os.FileMode(n)
+		}
+
 		f, err := os.Create(dst)
 		if err != nil {
 			http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		defer f.Close()
 
 		written, err := io.Copy(f, r.Body)
 		if err != nil {
@@ -193,27 +227,41 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fmt.Fprintf(rw, "written: %d\n", written)
+		if mode > 0 {
+			if err := os.Chmod(dst, mode); err != nil {
+				http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		sha, err := Sha256sum(dst)
+		if err != nil {
+			http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		fmt.Fprintf(rw, "written: %d\nsha: %s\n", written, sha)
+		println("============", written)
 		return
 	}
 
-	dumpReq(r, rw)
+	http.Error(rw, "error: invalid url", http.StatusBadRequest)
 }
 
 func initConfig() {
-	conf.cacheDir = os.Getenv("HOME") + "/.cache/aceapi"
-	if _, err := os.Stat(conf.cacheDir); os.IsNotExist(err) {
-		if err := os.Mkdir(conf.cacheDir, 0700); err != nil {
+	conf.CacheDir = os.Getenv("HOME") + "/.cache/aceapi"
+	if _, err := os.Stat(conf.CacheDir); os.IsNotExist(err) {
+		if err := os.Mkdir(conf.CacheDir, 0700); err != nil {
 			panic(err)
 		}
 	}
 
-	conf.tokenFile = os.Getenv("HOME") + "/.config/aceapi/token.txt"
-	buf, err := ioutil.ReadFile(conf.tokenFile)
+	conf.TokenFile = os.Getenv("HOME") + "/.config/aceapi/token.txt"
+	buf, err := ioutil.ReadFile(conf.TokenFile)
 	if err != nil {
-		panic("cannot read token from " + conf.tokenFile)
+		panic("cannot read token from " + conf.TokenFile)
 	}
-	conf.token = strings.Trim(string(buf), "\r\n ")
+	conf.Token = strings.Trim(string(buf), "\r\n ")
 }
 
 func main() {

@@ -14,7 +14,12 @@ import (
 var server *httptest.Server
 
 func testInit() {
-	init_config()
+	conf = Config{
+		Token:     "12345",
+		TokenFile: "whatever",
+		CacheDir:  "/tmp",
+	}
+
 	version = "test_version"
 	date = "test_date"
 	mux := http.NewServeMux()
@@ -35,7 +40,7 @@ func TestVersion(t *testing.T) {
 
 	client := &http.Client{Transport: tr}
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/v", nil)
-	req.Header.Add("Token", conf.token)
+	req.Header.Add("Token", conf.Token)
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -66,11 +71,17 @@ func TestUpload(t *testing.T) {
 	}
 
 	client := &http.Client{Transport: tr}
-	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/upload?dst=1~.txt", nil)
-	req.Header.Add("Token", conf.token)
-	req.Body, _ = os.Open("aceapi_test.go")
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/file?dst=1~.txt&mode=0764", nil)
+	req.Header.Add("Token", conf.Token)
+	fname := "aceapi_test.go"
 	fi, err := os.Lstat("aceapi_test.go")
-	expected := fmt.Sprintf("written: %d\n", fi.Size())
+	sha, err := Sha256sum(fname)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := fmt.Sprintf("written: %d\nsha: %s\n", fi.Size(), sha)
+	req.Body, _ = os.Open(fname)
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -86,7 +97,7 @@ func TestUpload(t *testing.T) {
 
 	if strings.Index(s, expected) < 0 {
 		t.Log(s)
-		t.Fatal("invalid written size")
+		t.Fatalf("no expected response:\n%s\n", expected)
 	}
 }
 
