@@ -1,4 +1,5 @@
 curl \
-	-H "Token: `cat token.txt`" \
+	-H "Token: `cat ~/.config/aceapi/token.txt`" \
 	-k \
 	--url https://localhost:9001/v1/$1
+

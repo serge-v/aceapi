@@ -16,6 +16,20 @@ import (
 	"strings"
 )
 
+const help = `ACEAPI help.
+Requests:
+	GET req                               -- dump request
+	POST cron                             -- set crontab
+	GET cron                              -- get crontab
+	GET ht                                -- dump ../.htaccess
+	GET v                                 -- show version
+	POST file?dst={path}&mode={mode}      -- upload a file
+	HEAD file?dst={path}                  -- get file attributes
+	POST x                                -- execute command
+Headers:
+	Token -- authorization token
+`
+
 type Config struct {
 	Token     string
 	TokenFile string
@@ -79,6 +93,77 @@ func Sha256sum(fileName string) (string, error) {
 	return hex.EncodeToString(sum), nil
 }
 
+func getFileInfo(rw http.ResponseWriter, r *http.Request) {
+	dst := r.URL.Query().Get("dst")
+	if dst == "" {
+		http.Error(rw, "error: no dst=fname parameter", http.StatusBadRequest)
+		return
+	}
+
+	fi, err := os.Lstat(dst)
+	if err != nil {
+		http.Error(rw, "error: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	fmt.Fprintf(rw, "name: %s\n", fi.Name())
+	fmt.Fprintf(rw, "size: %d\n", fi.Size())
+	fmt.Fprintf(rw, "mode: %s\n", fi.Mode())
+}
+
+func postFile(rw http.ResponseWriter, r *http.Request) {
+	dst := r.URL.Query().Get("dst")
+	if dst == "" {
+		http.Error(rw, "error: no dst=fname parameter", http.StatusBadRequest)
+		return
+	}
+
+	str := r.URL.Query().Get("mode")
+	var mode os.FileMode = 0
+
+	if len(str) > 0 {
+		n, err := strconv.ParseInt(str, 8, 32)
+		if err != nil {
+			http.Error(rw, "error: cannot parse mode parameter", http.StatusBadRequest)
+			return
+		}
+		if n < 0 || n > 0777 {
+			http.Error(rw, "error: invalid file mode", http.StatusBadRequest)
+			return
+		}
+		mode = os.FileMode(n)
+	}
+
+	f, err := os.Create(dst)
+	if err != nil {
+		http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	written, err := io.Copy(f, r.Body)
+	if err != nil {
+		http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if mode > 0 {
+		if err := os.Chmod(dst, mode); err != nil {
+			http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	sha, err := Sha256sum(dst)
+	if err != nil {
+		http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintf(rw, "written: %d\nsha: %s\n", written, sha)
+	return
+}
+
 type handler struct {
 }
 
@@ -105,19 +190,6 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	if path == "" || path == "/" {
-		help := `
-		Requests:
-			GET req                               -- dump request
-			POST cron                             -- set crontab
-			GET cron                              -- get crontab
-			GET ht                                -- dump ../.htaccess
-			GET v                                 -- show version
-			POST file?dst={path}&mode={mode}      -- upload file
-			HEAD file?dst={path}                  -- get file attributes
-			POST x                                -- execute command
-		Headers:
-			Token -- authorization token
-		`
 		fmt.Fprintf(rw, help)
 		return
 	}
@@ -143,21 +215,6 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		buf, _ := ioutil.ReadAll(r.Body)
 		fmt.Fprintln(rw, execCmd(string(buf)))
-		return
-	}
-
-	if path == "/df" {
-		fmt.Fprintln(rw, execCmd("df -h --local ${DOCUMENT_ROOT} 2>/dev/null"))
-		return
-	}
-
-	if path == "/ht" {
-		f, err := os.Open("../.htaccess")
-		if err != nil {
-			http.Error(rw, "error: cannot read .htaccess", http.StatusNotFound)
-			return
-		}
-		io.Copy(rw, f)
 		return
 	}
 
@@ -187,76 +244,38 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	if path == "/file" {
-		if r.Method != "POST" {
-			http.Error(rw, "error: post method required", http.StatusMethodNotAllowed)
-			return
+		switch r.Method {
+		case "POST":
+			postFile(rw, r)
+		case "GET":
+			getFileInfo(rw, r)
+		default:
+			http.Error(rw, "error: head or post method required", http.StatusMethodNotAllowed)
 		}
-
-		dst := r.URL.Query().Get("dst")
-		if dst == "" {
-			http.Error(rw, "error: no dst=fname parameter", http.StatusBadRequest)
-			return
-		}
-
-		str := r.URL.Query().Get("mode")
-		var mode os.FileMode = 0
-
-		if len(str) > 0 {
-			n, err := strconv.ParseInt(str, 8, 32)
-			if err != nil {
-				http.Error(rw, "error: cannot parse mode parameter", http.StatusBadRequest)
-				return
-			}
-			if n < 0 || n > 0777 {
-				http.Error(rw, "error: invalid file mode", http.StatusBadRequest)
-				return
-			}
-			mode = os.FileMode(n)
-		}
-
-		f, err := os.Create(dst)
-		if err != nil {
-			http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer f.Close()
-
-		written, err := io.Copy(f, r.Body)
-		if err != nil {
-			http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if mode > 0 {
-			if err := os.Chmod(dst, mode); err != nil {
-				http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-
-		sha, err := Sha256sum(dst)
-		if err != nil {
-			http.Error(rw, "error: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		fmt.Fprintf(rw, "written: %d\nsha: %s\n", written, sha)
-		println("============", written)
 		return
 	}
 
 	http.Error(rw, "error: invalid url", http.StatusBadRequest)
 }
 
+func getDir() string {
+	dir := os.Getenv("DOCUMENT_ROOT")
+	if len(dir) > 0 {
+		return dir + "/cgi-bin"
+	}
+	return os.Getenv("HOME")
+}
+
 func initConfig() {
-	conf.CacheDir = os.Getenv("HOME") + "/.cache/aceapi"
+	conf.CacheDir = getDir() + "/.cache/aceapi"
+
 	if _, err := os.Stat(conf.CacheDir); os.IsNotExist(err) {
 		if err := os.Mkdir(conf.CacheDir, 0700); err != nil {
 			panic(err)
 		}
 	}
 
-	conf.TokenFile = os.Getenv("HOME") + "/.config/aceapi/token.txt"
+	conf.TokenFile = getDir() + "/.config/aceapi/token.txt"
 	buf, err := ioutil.ReadFile(conf.TokenFile)
 	if err != nil {
 		panic("cannot read token from " + conf.TokenFile)

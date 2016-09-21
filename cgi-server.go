@@ -12,6 +12,7 @@ func main() {
 
 	api := cgi.Handler{}
 	api.Path = "aceapi"
+	api.InheritEnv = []string{"HOME"}
 
 	updater := cgi.Handler{}
 	updater.Path = "updater"
