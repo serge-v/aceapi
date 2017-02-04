@@ -21,13 +21,17 @@ Requests:
 	GET req                               -- dump request
 	POST cron                             -- set crontab
 	GET cron                              -- get crontab
-	GET ht                                -- dump ../.htaccess
 	GET v                                 -- show version
 	POST file?dst={path}&mode={mode}      -- upload a file
 	HEAD file?dst={path}                  -- get file attributes
 	POST x                                -- execute command
 Headers:
 	Token -- authorization token
+Examples:
+	Execute command:
+		curl -H "Token: $(cat ~/.config/aceapi/token.txt)" -k --url https://localhost:9001/v1/x -X POST -d env
+	Upload a file:
+		curl -H "Token: $(cat ~/.config/aceapi/token.txt)" -k --url "https://localhost:9001/v1/file?dst=1.txt&mode=0600" -d @1.txt
 `
 
 type Config struct {
@@ -183,14 +187,14 @@ func (handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := r.Header.Get("Token")
-	if len(token) == 0 || token != conf.Token {
-		http.Error(rw, "error: invalid token", http.StatusForbidden)
+	if path == "" || path == "/" {
+		fmt.Fprintf(rw, help)
 		return
 	}
 
-	if path == "" || path == "/" {
-		fmt.Fprintf(rw, help)
+	token := r.Header.Get("Token")
+	if len(token) == 0 || token != conf.Token {
+		http.Error(rw, "error: invalid token", http.StatusForbidden)
 		return
 	}
 
